@@ -2,6 +2,8 @@ import numpy as np
 from scipy.stats import nbinom, pearsonr, spearmanr
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize, LinearConstraint
+from sklearn.svm import LinearSVR
+
 
 class SimpleDeconvolver():
     def __init__(self, means, a0=None):
@@ -113,28 +115,6 @@ for Ntissues in range(3,31):
     data = trueFractions.dot(np.random.normal(mus,sigmas))
     if snoise > 0:
         data += np.random.normal(0, snoise, size=data.shape)
-
-
-    from sklearn.svm import LinearSVR
-    #
-    # reg = LinearSVR()
-    #
-    # reg.fit(referenceData, labels.astype(float))
-    # pred = reg.predict(data)
-    #
-    # print(pearsonr(pred, trueFractions[:,1]))
-    # print('')
-    # print(spearmanr(pred, trueFractions[:,1]))
-    #
-    #
-    # fig = plt.figure()
-    # ax = fig.add_subplot(1,2,1)
-    # ax.scatter(trueFractions[:,1], pred, edgecolor='k')
-    #
-    # xxx  = np.linspace(0,1,20)
-    # ax.plot(xxx, xxx, 'k--')
-
-    # part 2
 
 
     pred = np.zeros((data.shape[0], Ntissues))
