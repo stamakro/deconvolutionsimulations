@@ -3,7 +3,7 @@ clear all;
 rng(120621);
 
 % parameters of simulation
-maxNumTissues = 30;
+maxNumTissues = 10;
 Ntissues = 3;
 NtissueSamples = 5;
 Ngenes = 50;
@@ -51,7 +51,8 @@ for Ntissues = minNumTissues:maxNumTissues
 
     for i = 1:Nsamples
 
-        estimatedFractions = deconvolve(data(i,:),estimatedMus, 1.0, 0.1);
+        %estimatedFractions = deconvolve(data(i,:),estimatedMus, 1.0, 0.1);
+        estimatedFractions = deconvolveLsq(data(i,:),estimatedMus, 1.0);
         [Cs(Ntissues - minNumTissues + 1, i), mses(Ntissues - minNumTissues + 1, i), maes(Ntissues - minNumTissues + 1, i), maxDevs(Ntissues - minNumTissues + 1, i)] = evaluateTissueOfOrigin(trueFractions(i,:)', estimatedFractions);
     end
 end

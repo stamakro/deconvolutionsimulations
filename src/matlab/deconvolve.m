@@ -3,7 +3,7 @@ function proportions = deconvolve(cfDNA, atlasMeans, C, epsilon)
 %deconcolve Estimate tissue proportions using support vector regression
 %   INPUTS:
 %       cfDNA:     (vector N) of methylation values at N markers (mixture of T tissues)
-%       atlasMeans:(matrix N x T) with the mean methylation value of each marker at each tissue
+%       atlasMeans:(matrix T x N) with the mean methylation value of each marker at each tissue
 %       C:         (float) parameter of SVR, controls the effect of the regularization vs the constraints 
 %       epsilon:   (float) parameter of SVR, if prediction error is less than epsilon for a gene, then that gene does not contribute to the margin  
 

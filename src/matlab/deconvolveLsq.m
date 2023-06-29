@@ -2,19 +2,19 @@ function proportions = deconvolveLsq(cfDNA, atlasMeans, C)
 %deconcolve Estimate tissue proportions using support vector regression
 %   INPUTS:
 %       cfDNA:     (vector N) of methylation values at N markers (mixture of T tissues)
-%       atlasMeans:(matrix N x T) with the mean methylation value of each marker at each tissue
+%       atlasMeans:(matrix T x N) with the mean methylation value of each marker at each tissue
 %       C:         (float) parameter of SVR, controls the effect of the regularization vs the mean squared error 
-    x = atlasMeans;
+    x = atlasMeans';
 
     [Ngenes, Ntissues] = size(x);
 
     % set up quadratic program to solve support vector regression
     %P in python qp, quadratic component
-    H = x' * x + eye(Ngenes) / C;
+    H = x' * x + eye(Ntissues) / C;
     
     
     % q in python qp, linear component
-    f = -cfDNA' * x;
+    f = -cfDNA * x;
     
     % no inequality constraints
     A = [];
@@ -25,8 +25,8 @@ function proportions = deconvolveLsq(cfDNA, atlasMeans, C)
     beq = 1;
     
     % inequality constraints on the range of variable ([0,1])
-    lb = zeros(1, Ngenes);
-    ub = ones(1, Ngenes);
+    lb = zeros(1, Ntissues);
+    ub = ones(1, Ntissues);
  
     
     % solve quadratic program, X contains the solution, fval other
