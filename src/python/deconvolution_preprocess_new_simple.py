@@ -2,12 +2,14 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
-from scipy.stats import ttest_ind, dirichlet
+import seaborn as sns
+from scipy.stats import ttest_ind, dirichlet, pearsonr, spearmanr, gaussian_kde
 import pickle
 import statsmodels.api as sm
 from copy import deepcopy
 import sys
-
+from scipy.spatial.distance import cdist
+import matlab.engine
 
 def geneLength(region: str) -> int:
     # takes a region, e.g. 'chr3:1000-1234' in this format, and returns the length of the region
@@ -20,7 +22,6 @@ def splitAtlas(sampleNames: np.ndarray, celltypes: np.ndarray, seed: int) -> lis
     # remove one random sample from each CT for leave-one-out
 
     # immune cells together
-    # liver/ovary/thyroid together
     # neurons/oligodendrocytes together
     # colon independent
     # melanoma also independent
@@ -30,43 +31,51 @@ def splitAtlas(sampleNames: np.ndarray, celltypes: np.ndarray, seed: int) -> lis
     allCellTypes = np.sort(np.unique(celltypes))
     testSamples = []
 
+    # randomly shuffle all colon samples and pick the last one in this random order
     colonRnd = np.random.permutation(np.where(celltypes == 'colon')[0])
     if len(colonRnd) > 1:
         testSamples = [sampleNames[colonRnd[-1]]]
 
+    # similar for melanoma
     melaRnd = np.random.permutation(np.where(celltypes == 'melanoma')[0])
     if len(melaRnd) > 1:
         testSamples += [sampleNames[melaRnd[-1]]]
 
+    # for neurons and oligos, take the sample of the same individual
+    # so pick a number from 1-11
     brainRnd = np.random.randint(1,12)
-    if 'neuron_%d' % brainRnd in sampleNames:
-        testSamples += ['neuron_%d' % brainRnd]
+    if '%d-N' % brainRnd in sampleNames:
+        testSamples += ['%d-N' % brainRnd]
 
-    if 'oligodendrocyte_%d' % brainRnd in sampleNames:
-        testSamples += ['oligodendrocyte_%d' % brainRnd]
+    if '%d-O' % brainRnd in sampleNames:
+        testSamples += ['%d-O' % brainRnd]
 
-    tissueNames = np.random.permutation(['S13-095', 'S14-073', 'S14-074', 'S14-129'])
+    # ignore these old samples
+    # tissueNames = np.random.permutation(['S13-095', 'S14-073', 'S14-074', 'S14-129'])
+    #
+    # if ('Liver-%s' % tissueNames[-1]) in sampleNames:
+    #     testSamples += ['Liver-%s' % tissueNames[-1]]
+    #
+    # if ('Ovary-%s' % tissueNames[-1]) in sampleNames:
+    #     testSamples += ['Ovary-%s' % tissueNames[-1]]
+    #
+    # if ('Thyroid-%s' % tissueNames[-1]) in sampleNames:
+    #     testSamples += ['Thyroid-%s' % tissueNames[-1]]
 
-    if ('Liver-%s' % tissueNames[-1]) in sampleNames:
-        testSamples += ['Liver-%s' % tissueNames[-1]]
+    # this is similar for the immune cells, take all 4 from the same individual
+    # (one Neutrophile sample is missing)
+    # first individual is A3832-A3835, next starts from A3836 etc
+    immuneNumbers = np.random.permutation(np.arange(32,69,4))
 
-    if ('Ovary-%s' % tissueNames[-1]) in sampleNames:
-        testSamples += ['Ovary-%s' % tissueNames[-1]]
-
-    if ('Thyroid-%s' % tissueNames[-1]) in sampleNames:
-        testSamples += ['Thyroid-%s' % tissueNames[-1]]
-
-
-    immuneNames = np.random.permutation(['IT181565', 'IT181566', 'IT181567', 'IT181568'])
-
-    if ('Mono-%s' % immuneNames[-1]) in sampleNames:
-        testSamples.append('Mono-%s' % immuneNames[-1])
-    if ('B-Lymfo-%s' % immuneNames[-1]) in sampleNames:
-        testSamples.append('B-Lymfo-%s' % immuneNames[-1])
-    if ('T-Lymfo-%s' % immuneNames[-1]) in sampleNames:
-        testSamples.append('T-Lymfo-%s' % immuneNames[-1])
-    if ('Neutro-%s' % immuneNames[-1]) in sampleNames:
-        testSamples.append('Neutro-%s' % immuneNames[-1])
+    # B-cell
+    testSamples.append('A38%d' % immuneNumbers[-1])
+    # T-cell
+    testSamples.append('A38%d' % (immuneNumbers[-1]+1))
+    # Monocyte
+    testSamples.append('A38%d' % (immuneNumbers[-1]+2))
+    neutroS = 'A38%d' % (immuneNumbers[-1]+3)
+    if neutroS in sampleNames:
+        testSamples.append(neutroS)
 
     return testSamples
 
@@ -449,45 +458,49 @@ if __name__ == '__main__':
         ax.set_xticklabels(allCellTypes, rotation=45)
         ax.set_title('%s-methylated' % hyp)
 
-    plt.show()
-    sys.exit(0)
 
-    # code not documented after this point !
-    # stop here for now
-
+    # put the indices of all markers together
     markerHyperInd = np.hstack([v for _,v in allMarkers['hyper'].items()])
     markerHypoInd = np.hstack([v for _,v in allMarkers['hypo'].items()])
     markerInd = np.hstack((markerHyperInd, markerHypoInd))
 
     # make sure atlas is robust to leaving out one sample
-    # (but preprocessing is still done jointly)
-    from scipy.spatial.distance import cdist
 
+    # set random seeds for reproducibility
     np.random.seed(104)
+    # number of leave one sample out repeats
     N = 20
     seeds = np.random.randint(0, 2**32, N)
 
+    # gather all kinds of statistics from these
     corrects = np.zeros(len(allCellTypes))
     tested = np.zeros(len(allCellTypes))
     nmarkers = np.zeros(N)
     nmarkersCt = np.zeros((N, len(allCellTypes)))
-    verbose = False
     accRound = np.zeros(N)
-    zscore = True
-    useVst = False
 
+    # if True, print results of every iteration
+    verbose = True
+    # whether to cente/scale the data to 0 mean and unit variance
+    zscore = True
+    # keep false for now, you can look up Variance Stabilizing Transform if you are really interested
+    useVst = False
 
     for i in range(N):
         print(i)
+        # leave out one sample from each cell population
         testSamples = splitAtlas(np.array(bigDF.index), np.array(bigDF['Cell type']), seeds[i])
 
+        # left out samples go to testDF, the rest are called trainDF
         trainDF = bigDF.drop(testSamples, axis=0)
         testDF = bigDF.loc[testSamples]
 
+        # get methylation counts
         if not zscore:
             vstTrain = normalizedData.loc[trainDF.index]
             vstTest = normalizedData.loc[testDF.index]
         else:
+            # if z-score, estimated mean and variance in the training data
             ss = StandardScaler()
             vstTrain = ss.fit_transform(normalizedData.loc[trainDF.index])
             vstTest = ss.transform(normalizedData.loc[testDF.index])
@@ -496,6 +509,7 @@ if __name__ == '__main__':
             vstTest = pd.DataFrame(data=vstTest, index=testDF.index, columns=normalizedData.columns)
 
 
+        # make the dictionary with ct as key, methylation profiles as values
         trainDataPerCt = dict()
         for ct in allCellTypes:
             ii = np.where(trainDF['Cell type'] == ct)[0]
@@ -512,8 +526,7 @@ if __name__ == '__main__':
         markerHypoInd = np.hstack([v for _,v in allMarkers['hypo'].items()])
         markerInd = np.hstack((markerHyperInd, markerHypoInd))
 
-        # markerInd = np.array(findMarkersTstatPairwise(trainDataPerCt, minTstat, 5, 1, False))
-
+        # isolate marker data
         vstTrainMarkers = vstTrain.iloc[:, markerInd]
         vstTestMarkers = vstTest.iloc[:, markerInd]
 
@@ -524,13 +537,15 @@ if __name__ == '__main__':
         nmarkers[i] = atlasMeans.shape[1]
 
         for j, ct in enumerate(allCellTypes):
+            # calculate mean and variance of each marker in each cell type
             x = trainDataPerCt[ct].iloc[:, markerInd]
 
             atlasMeans[j] = x.mean()
             atlasSigmas[j] = x.std()
 
-
+        # calculate all pairwise distances between the atlas means and the left out samples
         D = cdist(atlasMeans, vstTestMarkers, metric='cosine')
+        # test whether each left out sample is closer to the samples of its correct cell type than other cell types
         correctRound = 0
         for j in range(testDF.shape[0]):
             d = D[:,j]
@@ -624,13 +639,12 @@ if __name__ == '__main__':
     # ax.set_xlabel('#markers found')
     # ax.set_ylabel('LOO accuracy for round')
 
-
-    # count how often each cpg island is a marker
+    # count how often each cpg island is a marker, takes a while...
     N = 100
     np.random.seed(42)
     seeds = np.random.randint(0, 2**32, N)
 
-    nmark = np.zeros((N, len(allCellTypes), vstCounts.shape[1]), int)
+    nmark = np.zeros((N, len(allCellTypes), normalizedData.shape[1]), int)
 
     for i in range(N):
         print('%d/%d' % (i, N))
@@ -673,35 +687,42 @@ if __name__ == '__main__':
         atlasMeans[i] = x.mean()
         atlasSigmas[i] = x.std()
 
+    # final atlas, each row a cell type, each column a marker, contains the mean of each marker in each ct
     atlasDF = pd.DataFrame(atlasMeans, index=allCellTypes, columns=normalizedData.columns[markerInd])
 
-
+    # save atlas for the future
     if useVst:
         with open('tmp/atlas_new_clusters_vst_%f_tstat.pkl' % minTstat, 'wb') as f:
             pickle.dump({'atlas': atlasDF, 'preprocessing': vstMapper}, f)
 
     else:
         with open('tmp/atlas_new_clusters_tpm_%f_tstat.pkl' % minTstat, 'wb') as f:
-            pickle.dump({'atlas': atlasDF, 'preprocessing': vstMapper}, f)
+            pickle.dump({'atlas': atlasDF}, f)
 
 
 
     np.random.seed(1)
-    # draw 100 artificial mixtures
-    NN = 100
+    # draw artificial mixtures based on the mean and variance of each marker in each cell type
+    # this is the easiest possible simulation
+    NN = 20
 
     profiles = np.zeros((NN, markerInd.shape[0]))
     fractions = np.zeros((NN, len(allCellTypes)))
 
     for i in range(NN):
-
+        # dirichlet distribution can be used to generate in this case 8 probabilities that add to 100%
+        # these are the simulated proportions
         ff = dirichlet.rvs(np.ones(len(allCellTypes)))
 
+        # for each marker draw a random number in each cell type
+        # (note that here we are making the huge assumption that all markers are independent)
         rr = np.random.normal(atlasMeans, atlasSigmas)
 
+        # each marker value is multiplied by the corresponding cell type proportion and added together
         profiles[i] = ff.dot(rr)
         fractions[i] = ff
 
+    # again save the data
     if useVst:
         with open('tmp/example0_clusters_vst.pkl', 'wb') as f:
             pickle.dump({'atlas': atlasMeans, 'profile': profiles, 'trueprop': fractions, 'ctdraws': rr}, f)
@@ -709,87 +730,124 @@ if __name__ == '__main__':
         with open('tmp/example0_clusters_tpm.pkl', 'wb') as f:
             pickle.dump({'atlas': atlasMeans, 'profile': profiles, 'trueprop': fractions, 'ctdraws': rr}, f)
 
+    # init matlab
+    eng = matlab.engine.start_matlab()
+    # set working directory to where the code lives
+    eng.cd(r'/home/stavros/Desktop/code/deconvolutionsimulations/src/matlab/', nargout=0)
+
+    ########################################################################################################
+    # estimate proportions
+
+    # estimated fractions
+    ef = np.zeros(fractions.shape)
+    # linear and non-linear correlation between true and estimated fractions
+    rhoSpearman = np.zeros(ef.shape[0])
+    rhoPearson = np.zeros(ef.shape[0])
+
+    # convert data frame to np array, because matlab doesn't like pandas
+    atlas = np.array(atlasDF)
+
+    for i in range(profiles.shape[0]):
+        # call the deconvolution function from matlab one mixture at a time
+        # this takes > 1 min per profile, so this will take a couple of hours
+        matlabres = eng.deconvolve(profiles[i], atlas, 1.0, 0.1, nargout=1)
+        # save result
+        ef[i] = np.array(matlabres).reshape(-1,)
+
+        # calculate correlations
+        rhoPearson[i] = pearsonr(ef[i], fractions[i])[0]
+        rhoSpearman[i] = spearmanr(ef[i], fractions[i])[0]
+
+        print('Iteration %d:, r = %.3f' % (i, rhoPearson[i]))
+
+    # do the same, now not for mixtures, but individual samples from 1 ct
+    ef2 = np.zeros((atlasDF.shape[0], atlasDF.shape[0]))
+    for i in range(rr.shape[0]):
+        matlabres = eng.deconvolve(rr[i], atlas, 1.0, 0.1, nargout=1)
+
+        ef2[i] = np.array(matlabres).reshape(-1,)
+
+    for i in range(ef2.shape[0]):
+        # this number should be close to 1 (100% proportions of a single ct)
+        print(ef2[i,i])
+
+    # plot distribution of correlations
+    xx = np.linspace(-1,1,2000)
+    fig = plt.figure()
+    ax = fig.add_subplot(1,1,1)
+    d = gaussian_kde(rhoPearson)
+    ax.plot(xx, d(xx), label='pearson')
+    d = gaussian_kde(rhoSpearman)
+    ax.plot(xx, d(xx), label='spearman')
+
+    ax.legend()
+    # plt.show()
 
 
-    # same but odd are not uniform
-    np.random.seed(1)
-    # draw 100 artificial mixtures
-    NN = 100
-
-    odds = {'B-cell': 1.,
-     'Monocyte': 2.,
-     'Neutrophile': 3.,
-     'T-cell': 2.,
-     'colon': 1.,
-     'liver': 1.,
-     'melanoma': 0.8,
-     'neuron': 0.8,
-     'oligodendrocyte': 0.8,
-     'ovary': 0.8,
-     'thyroid': 0.8}
-
-    oddsVector = [odds[k] for k in allCellTypes]
-
-    profiles = np.zeros((NN, markerInd.shape[0]))
-    fractions = np.zeros((NN, len(allCellTypes)))
-
-    for i in range(NN):
-
-        ff = dirichlet.rvs(oddsVector)
-
-        rr = np.random.normal(atlasMeans, atlasSigmas)
-
-        profiles[i] = ff.dot(rr)
-        fractions[i] = ff
-
-    if useVst:
-        with open('tmp/example0.5_clusters_vst.pkl', 'wb') as f:
-            pickle.dump({'atlas': atlasMeans, 'profile': profiles, 'trueprop': fractions, 'ctdraws': rr}, f)
-    else:
-        with open('tmp/example0.5_clusters_tpm.pkl', 'wb') as f:
-            pickle.dump({'atlas': atlasMeans, 'profile': profiles, 'trueprop': fractions, 'ctdraws': rr}, f)
-
-
-
+    # # same but odds are not uniform
+    # np.random.seed(1)
+    # # draw 100 artificial mixtures
+    # NN = 10
+    #
+    # odds = {'B-cell': 1.,
+    #  'monocytes': 2.,
+    #  'granulocytes': 3.,
+    #  'T-cell': 2.,
+    #  'colon': 1.,
+    #  'melanoma': 0.8,
+    #  'neuron': 0.8,
+    #  'oligodendrocyte': 0.8}
+    #
+    # oddsVector = [odds[k] for k in allCellTypes]
+    #
+    # profiles = np.zeros((NN, markerInd.shape[0]))
+    # fractions = np.zeros((NN, len(allCellTypes)))
+    #
+    # for i in range(NN):
+    #
+    #     ff = dirichlet.rvs(oddsVector)
+    #
+    #     rr = np.random.normal(atlasMeans, atlasSigmas)
+    #
+    #     profiles[i] = ff.dot(rr)
+    #     fractions[i] = ff
+    #
+    # if useVst:
+    #     with open('tmp/example0.5_clusters_vst.pkl', 'wb') as f:
+    #         pickle.dump({'atlas': atlasMeans, 'profile': profiles, 'trueprop': fractions, 'ctdraws': rr}, f)
+    # else:
+    #     with open('tmp/example0.5_clusters_tpm.pkl', 'wb') as f:
+    #         pickle.dump({'atlas': atlasMeans, 'profile': profiles, 'trueprop': fractions, 'ctdraws': rr}, f)
 
 
     ###################################
     print('Leaving samples out...')
-    np.random.seed(12345)
-    N = 20
+    np.random.seed(123456)
+    N = 50
     seeds = np.random.randint(0, 2**32, N)
-    onlyNew = False
 
     odds = {'B-cell': 1.,
-     'Monocyte': 2.,
-     'Neutrophile': 3.,
+     'monocytes': 2.,
+     'granulocytes': 3.,
      'T-cell': 2.,
      'colon': 1.,
-     'liver': 1.,
      'melanoma': 0.8,
      'neuron': 0.8,
-     'oligodendrocyte': 0.8,
-     'ovary': 0.8,
-     'thyroid': 0.8}
+     'oligodendrocyte': 0.8}
+
 
     atlases = []
-    mixtures = {0: [], 0.001: [], 0.005: [], 0.01: [], 0.05: [], 0.1: [], 0.5: [], 1.0: []}
+    mixtures = {0: [], 0.005: [], 0.01: [], 0.05: [], 0.1: [], 0.5: [], 1.0: []}
 
     noiseInds = sorted(list(mixtures.keys()))[1:]
 
-    # bigDF2 = bigDF[bigDF['Cell type'] != 'Neutrophile']
-    # allCellTypes2 = deepcopy(allCellTypes)
-    # del allCellTypes2[allCellTypes2.index('Neutrophile')]
     bigDF2 = bigDF
     allCellTypes2 = allCellTypes
 
-    if onlyNew:
-        odds = {'colon': 1., 'melanoma': 0.8, 'neuron': 0.8, 'oligodendrocyte': 0.8}
-        allCellTypes2 = list(odds.keys())
-
-        bigDF2 = bigDF[bigDF['Cell type'].apply(lambda x: x in allCellTypes2)]
-
     trueFracs = np.zeros((N, len(allCellTypes2)))
+    estimatedFracs = np.zeros((N, len(mixtures), len(allCellTypes2)))
+
+    pearsonRhos = np.zeros((N, len(noiseInds)+1))
 
     for i in range(N):
         print(i)
@@ -798,21 +856,12 @@ if __name__ == '__main__':
         trainDF = bigDF2.drop(testSamples, axis=0)
         testDF = bigDF2.loc[testSamples]
 
-        if useVst:
-            myvstMapper = VstTransformer(False)
-            vstTrain = myvstMapper.fit_transform(trainDF, cc)
-            vstTest = myvstMapper.transform(testDF)
+        ss = StandardScaler()
+        vstTrain = ss.fit_transform(normalizedData.loc[trainDF.index])
+        vstTest = ss.transform(normalizedData.loc[testDF.index])
 
-        else:
-            # vstTrain = normalizedData.drop(testSamples, axis=0)
-            # vstTest = normalizedData.loc[testSamples]
-
-            ss = StandardScaler()
-            vstTrain = ss.fit_transform(normalizedData.loc[trainDF.index])
-            vstTest = ss.transform(normalizedData.loc[testDF.index])
-
-            vstTrain = pd.DataFrame(data=vstTrain, index=trainDF.index, columns=normalizedData.columns)
-            vstTest = pd.DataFrame(data=vstTest, index=testDF.index, columns=normalizedData.columns)
+        vstTrain = pd.DataFrame(data=vstTrain, index=trainDF.index, columns=normalizedData.columns)
+        vstTest = pd.DataFrame(data=vstTest, index=testDF.index, columns=normalizedData.columns)
 
 
         trainDataPerCt = dict()
@@ -833,7 +882,6 @@ if __name__ == '__main__':
         vstTrainMarkers = vstTrain.iloc[:, markerInd]
         vstTestMarkers = vstTest.iloc[:, markerInd]
 
-
         # generate atlas using vst mean markers
         atlasMeans = np.zeros((len(allCellTypes2), markerInd.shape[0]))
         atlasSigmas = np.zeros((len(allCellTypes2), markerInd.shape[0]))
@@ -847,21 +895,21 @@ if __name__ == '__main__':
 
         atlases.append(atlasMeans)
 
-        D = cdist(atlasMeans, vstTestMarkers, metric='cosine')
-        for j in range(testDF.shape[0]):
-            d = D[:,j]
-            ctTrue = testDF.iloc[j]['Cell type']
-            ctAtlasInd = allCellTypes2.index(ctTrue)
-
-            minInd = np.argmin(d)
-
-            print('%d) true: %s, predicted: %s' % (j, ctTrue, allCellTypes2[minInd]))
-            if ctTrue == allCellTypes2[minInd]:
-                print('distance to true: %f' % np.min(d))
-                print('distance to 2nd nearest: %f' % np.sort(d)[1])
-            else:
-                print('distance to nearest: %f' % np.min(d))
-                print('distance to true: %f' % d[ctAtlasInd])
+        # D = cdist(atlasMeans, vstTestMarkers, metric='cosine')
+        # for j in range(testDF.shape[0]):
+        #     d = D[:,j]
+        #     ctTrue = testDF.iloc[j]['Cell type']
+        #     ctAtlasInd = allCellTypes2.index(ctTrue)
+        #
+        #     minInd = np.argmin(d)
+        #
+        #     print('%d) true: %s, predicted: %s' % (j, ctTrue, allCellTypes2[minInd]))
+        #     if ctTrue == allCellTypes2[minInd]:
+        #         print('distance to true: %f' % np.min(d))
+        #         print('distance to 2nd nearest: %f' % np.sort(d)[1])
+        #     else:
+        #         print('distance to nearest: %f' % np.min(d))
+        #         print('distance to true: %f' % d[ctAtlasInd])
 
         # make sure true fractions are always lined-up in terms of the alphabetical order of cell types
         internalFractions = dirichlet.rvs(np.array(testDF['Cell type'].map(odds))).reshape(-1,)
@@ -873,23 +921,27 @@ if __name__ == '__main__':
         profile = internalFractions.dot(vstTestMarkers)
         mixtures[0].append(profile)
 
-        for noise in noiseInds:
+        matlabres = eng.deconvolve(profile, atlasMeans, 1.0, 0.1, nargout=1)
+        # save result
+        estimatedFracs[i,0] = np.array(matlabres).reshape(-1,)
+        pearsonRhos[i,0] = pearsonr(trueFracs[i], estimatedFracs[i,0])[0]
+        print(pearsonRhos[i,0])
+
+        for j, noise in enumerate(noiseInds, 1):
             mixtures[noise].append(profile + np.random.normal(0, noise, markerInd.shape[0]))
+            matlabres = eng.deconvolve(mixtures[noise][-1], atlasMeans, 1.0, 0.1, nargout=1)
 
-
-    if not onlyNew:
-
-        with open('tmp/example1_clusters_tpm.pkl', 'wb') as f:
-            pickle.dump({'atlas': atlases, 'profile': mixtures, 'trueprop': trueFracs}, f)
-
-    else:
-        with open('tmp/example1_clusters_tpm_onlynew.pkl', 'wb') as f:
-            pickle.dump({'atlas': atlases, 'profile': mixtures, 'trueprop': trueFracs}, f)
+            estimatedFracs[i,j] = np.array(matlabres).reshape(-1,)
+            pearsonRhos[i,j] = pearsonr(trueFracs[i], estimatedFracs[i,j])[0]
+            print(pearsonRhos[i,j])
 
 
 
+    df = pd.DataFrame({'rho': pearsonRhos.flatten(), 'noise': 20*sorted(list(mixtures.keys()))})
+    sns.boxplot(data=df,x='noise',y='rho')
+    sns.swarmplot(data=df,x='noise',y='rho', color='k')
 
-
+    plt.show()
     sys.exit(0)
 
     ########################
