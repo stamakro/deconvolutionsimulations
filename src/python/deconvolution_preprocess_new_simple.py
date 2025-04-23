@@ -13,6 +13,8 @@ import matlab.engine
 
 def geneLength(region: str) -> int:
     # takes a region, e.g. 'chr3:1000-1234' in this format, and returns the length of the region
+    clusters_df = pd.read_csv('/content/drive/MyDrive/counts_aggregated_clusters.csv', index_col = 0).T
+
     start, end = region.split(':')[1].split('-')
 
     return int(end) - int(start)
