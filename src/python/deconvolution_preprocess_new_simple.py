@@ -9,7 +9,7 @@ import statsmodels.api as sm
 from copy import deepcopy
 import sys
 from scipy.spatial.distance import cdist
-import matlab.engine
+#import matlab.engine
 
 def geneLength(region: str) -> int:
     # takes a region, e.g. 'chr3:1000-1234' in this format, and returns the length of the region
@@ -305,9 +305,9 @@ def renameSample(names: list) -> dict:
 if __name__ == '__main__':
 
     # file with sample info, cell type etc
-    sampleInfoPath = '/home/stavros/emc/users/smakrodimitris/edit/data/atlas-samples-overview.csv'
+    sampleInfoPath = '../../data/atlas-samples-oveview.csv'
     # folder where methylation counts are stored
-    outputPath = '/home/stavros/emc/projects/MedSeq/processed/atlas-new-immune-2025-03-20-15-26/'
+    outputPath = '../../data/'
 
     # remove sex chromosomes
     acceptedChromosomes = set(['chr' + str(i) for i in range(1,23)])
