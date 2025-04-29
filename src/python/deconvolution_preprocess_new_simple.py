@@ -286,6 +286,7 @@ def renameSample(names: list) -> dict:
 
     RETURNS a dictionary which can be used to fix the names by DataFrame.rename
     '''
+    
     renameDict = dict()
     for name in names:
         if 'neuron' in name:
@@ -300,7 +301,7 @@ def renameSample(names: list) -> dict:
     return renameDict
 
 
-# magic starts here
+# magic starts here! confidence
 if __name__ == '__main__':
 
     # file with sample info, cell type etc
