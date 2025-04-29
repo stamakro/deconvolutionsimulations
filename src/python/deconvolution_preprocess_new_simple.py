@@ -305,7 +305,7 @@ def renameSample(names: list) -> dict:
 if __name__ == '__main__':
 
     # file with sample info, cell type etc
-    sampleInfoPath = '../../data/atlas-samples-oveview.csv'
+    sampleInfoPath = '../../data/atlas-samples-overview.csv'
     # folder where methylation counts are stored
     outputPath = '../../data/'
 
