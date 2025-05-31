@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH -t 01:30:00
+#SBATCH -t 00:15:00
 #SBATCH -p genoa
 #SBATCH --nodes 1
 #SBATCH --ntasks 1
@@ -7,12 +7,13 @@
 #SBATCH --tasks-per-node 1
 #SBATCH --mem=10G
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=s.makrodimitris@erasmusmc.nl
+#SBATCH --mail-user=aphrodite.provolisianou@ru.nl
 
 ml purge;
 ml load 2023;
 ml load MATLAB/2023b-upd7;
-ml load Anaconda3/2023.07-2;
+source activate frogs;
 
 
-python deconvolution_preprocess_new_simple.sh;
+which python;
+p_ython deconvolution_preprocess_new_simple.py;

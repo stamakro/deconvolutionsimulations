@@ -1,0 +1,4 @@
+{
+"n": "/projects/0/AdamsLab/Data/parkinson/rcsite/temporary-symlinks/neurons/",
+"h": "/projects/0/AdamsLab/Data/parkinson/rcsite/healthy/"
+}

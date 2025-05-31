@@ -225,7 +225,7 @@ def convertCounts2clusteredRegions(rawCounts, ind=None):
 		ind = [0, 1, 2, 3]
 
 	try:
-		with open(createPath('../resources/site2cluster.pkl'), 'rb') as f:
+		with open(createPath('/projects/0/AdamsLab/Scripts/afroditi/deconvolutionsimulations/src/python/resources/site2cluster.pkl'), 'rb') as f:
 			mapping = pickle.load(f)
 	except FileNotFoundError:
 			# TODO : not implemented in codebase

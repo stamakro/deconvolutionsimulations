@@ -1,0 +1,39 @@
+/home/aprovolisianou/miniconda3/envs/frogs/bin/python
+Error using zeros
+Requested 1242369x1242369 (11499.8GB) array exceeds maximum array size preference (377.5GB). This might cause MATLAB to become unresponsive.
+
+Error in deconvolve (line 19)
+    H = zeros(Nvariables, Nvariables);
+
+Traceback (most recent call last):
+  File "/gpfs/work4/0/AdamsLab/Scripts/afroditi/deconvolutionsimulations/src/python/new_deco_with_matlab.py", line 142, in <module>
+    res = eng.deconvolve(profile_matlab, atlas_matlab, 1.0, 0.1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/aprovolisianou/.local/lib/python3.11/site-packages/matlab/engine/matlabengine.py", line 71, in __call__
+    _stderr, feval=True).result()
+                         ^^^^^^^^
+  File "/home/aprovolisianou/.local/lib/python3.11/site-packages/matlab/engine/futureresult.py", line 67, in result
+    return self.__future.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/aprovolisianou/.local/lib/python3.11/site-packages/matlab/engine/fevalfuture.py", line 82, in result
+    self._result = pythonengine.getFEvalResult(self._future,self._nargout, None, out=self._out, err=self._err)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+matlab.engine.MatlabExecutionError: 
+  File /gpfs/work4/0/AdamsLab/Scripts/afroditi/deconvolutionsimulations/src/matlab/deconvolve.m, line 19, in deconvolve
+Requested 1242369x1242369 (11499.8GB) array exceeds maximum array size preference (377.5GB). This might cause MATLAB to become unresponsive.
+
+
+JOB STATISTICS
+==============
+Job ID: 12089007
+Cluster: snellius
+User/Group: aprovolisianou/aprovolisianou
+State: RUNNING
+Nodes: 1
+Cores per node: 24
+CPU Utilized: 00:00:00
+CPU Efficiency: 0.00% of 00:22:48 core-walltime
+Job Wall-clock time: 00:00:57
+Memory Utilized: 0.00 MB
+Memory Efficiency: 0.00% of 10.00 GB (10.00 GB/node)
+WARNING: Efficiency statistics can only be obtained after the job has ended as seff tool is based on the accounting database data.

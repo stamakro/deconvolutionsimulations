@@ -1,15 +1,15 @@
 import pandas as pd
 import numpy as np
-#from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import ttest_ind, dirichlet, pearsonr, spearmanr, gaussian_kde
 import pickle
-import statsmodels.api as sm
+#import statsmodels.api as sm
 from copy import deepcopy
 import sys
 from scipy.spatial.distance import cdist
-#import matlab.engine
+import matlab.engine
 
 def geneLength(region: str) -> int:
     # takes a region, e.g. 'chr3:1000-1234' in this format, and returns the length of the region
@@ -460,7 +460,8 @@ if __name__ == '__main__':
         ax.set_xticklabels(allCellTypes, rotation=45)
         ax.set_title('%s-methylated' % hyp)
 
-
+    fig.savefig('oki.png')
+    sys.exit(0)
     # put the indices of all markers together
     markerHyperInd = np.hstack([v for _,v in allMarkers['hyper'].items()])
     markerHypoInd = np.hstack([v for _,v in allMarkers['hypo'].items()])
